@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="hi"><head><meta charset="utf-8"><title>Mera AI Assistant</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#111827">
+<style>
+:root{--bg:#0b1220;--card:#162033;--me:#2563eb;--fg:#e5e7eb;--mut:#94a3b8}
+*{box-sizing:border-box}html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font-family:system-ui,sans-serif;display:flex;flex-direction:column}
+header{display:flex;align-items:center;gap:8px;padding:12px 14px;background:var(--card)}
+header b{flex:1}
+button{border:0;border-radius:10px;padding:9px 13px;background:#243049;color:var(--fg);font-size:15px;cursor:pointer}
+button.pri{background:var(--me)}button.ok{background:#16a34a}button.no{background:#dc2626}button.on{background:#dc2626}
+#log{flex:1;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:10px}
+.m{max-width:85%;padding:10px 13px;border-radius:14px;white-space:pre-wrap;word-break:break-word;line-height:1.4}
+.u{align-self:flex-end;background:var(--me)}.a{align-self:flex-start;background:var(--card)}
+.ap{align-self:flex-start;background:#3b2f0a;border:1px solid #eab308;border-radius:14px;padding:12px;max-width:90%}
+.ap code{display:block;background:#0006;padding:8px;border-radius:8px;margin:8px 0;white-space:pre-wrap;word-break:break-all;font-size:13px}
+.ap div{display:flex;gap:8px}
+form{display:flex;gap:8px;padding:10px;padding-bottom:calc(10px + env(safe-area-inset-bottom,0px));background:var(--card)}
+input{flex:1;min-width:0;border:0;border-radius:10px;padding:11px;background:#0b1220;color:var(--fg);font-size:16px}
+small{color:var(--mut)}
+.md{position:fixed;inset:0;background:#000a;display:none;place-items:center;padding:16px}.md.open{display:grid}
+.bx{background:var(--card);border-radius:14px;padding:18px;width:100%;max-width:420px}.bx label{display:block;margin:12px 0 4px;color:var(--mut);font-size:14px}
+.bx input[type=password],.bx select{width:100%;background:#0b1220;color:var(--fg);border:0;border-radius:8px;padding:10px;font-size:15px}.bx a{color:#60a5fa}
+</style></head><body>
+<header><b>🤖 Mera Assistant</b><button id="set" title="Settings">⚙️</button><button id="spk" title="Bolkar jawab">🔊</button><button id="rst" title="Nayi baat">🗑</button></header>
+<div id="log"><div class="m a">Namaste! Main aapka assistant hoon. Boliye ya likhiye — ideas chahiye ya computer ka koi kaam?</div></div>
+<form id="f"><button type="button" id="mic" aria-label="Bolo">🎤</button><input id="t" placeholder="Kuch bhi poochho…" autocomplete="off"><button class="pri">Bhejo</button></form>
+<div class="md" id="md"><div class="bx"><b>⚙️ Settings</b><p id="sst" style="color:var(--mut)"></p>
+<label>AI provider</label><select id="pv"><option value="gemini">Google Gemini</option><option value="claude">Anthropic Claude</option></select>
+<label>API key (<a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">Gemini key yahan se</a>)</label><input id="ky" type="password" placeholder="Key paste karo" autocomplete="off">
+<label><input type="checkbox" id="ph"> Phone se bhi chalao (assistant dobara start karna padega)</label><small id="phl" style="word-break:break-all"></small>
+<div style="display:flex;gap:8px;margin-top:16px"><button id="cl" style="flex:1">Band karo</button><button id="sv" class="pri" style="flex:1">Save</button></div></div></div>
+<script>
+const $=s=>document.querySelector(s),log=$('#log');
+let pin=localStorage.getItem('pin')||'',speak=localStorage.getItem('speak')!=='0',busy=false;
+const tp=new URLSearchParams(location.search).get('t');if(tp){pin=tp;localStorage.setItem('pin',pin);history.replaceState(null,'','/')}
+$('#spk').textContent=speak?'🔊':'🔇';
+const add=(t,c)=>{const d=document.createElement('div');d.className='m '+c;d.textContent=t;log.append(d);log.scrollTop=1e9;return d};
+function say(t){if(!speak||!t||!window.speechSynthesis)return;speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(t);u.lang='hi-IN';speechSynthesis.speak(u)}
+async function api(p,b){
+  if(!pin){pin=prompt('Apna ASSISTANT_PIN daalo:')||'';localStorage.setItem('pin',pin)}
+  const r=await fetch('/api/'+p,{method:'POST',headers:{'Content-Type':'application/json','X-PIN':pin},body:JSON.stringify(b||{})});
+  if(r.status===401){pin='';localStorage.removeItem('pin');return{reply:'PIN galat hai, dobara try karo.'}}
+  return r.json();
+}
+function handle(d){
+  busy=false;
+  if(d.approve){
+    const {tool,input}=d.approve,box=document.createElement('div');box.className='ap';
+    const what=tool==='run_command'?input.command:tool==='open_target'?input.target:input.path+'\n\n'+(input.content||'').slice(0,300);
+    box.innerHTML='<b>Permission chahiye: '+tool+'</b><code></code><div><button class="ok">✅ Haan</button><button class="no">❌ Nahi</button></div>';
+    box.querySelector('code').textContent=what;
+    const go=async ok=>{box.remove();add(ok?'✅ Allow kiya':'❌ Mana kiya','u');busy=true;handle(await api('approve',{ok}))};
+    box.querySelector('.ok').onclick=()=>go(true);box.querySelector('.no').onclick=()=>go(false);
+    log.append(box);log.scrollTop=1e9;say('Permission chahiye');
+  }else{add(d.reply||'(khali jawab)','a');say(d.reply)}
+}
+async function send(text){
+  if(!text.trim()||busy)return;busy=true;add(text,'u');const w=add('soch raha hoon…','a');
+  try{const d=await api('chat',{text});w.remove();handle(d)}catch(e){w.remove();busy=false;add('Server se connect nahi ho paaya.','a')}
+}
+$('#f').onsubmit=e=>{e.preventDefault();const v=$('#t').value;$('#t').value='';send(v)};
+$('#spk').onclick=()=>{speak=!speak;localStorage.setItem('speak',speak?'1':'0');$('#spk').textContent=speak?'🔊':'🔇';speechSynthesis.cancel()};
+$('#rst').onclick=async()=>{await api('reset');log.innerHTML='';add('Nayi baat shuru. Boliye!','a')};
+const md=$('#md');
+async function openSet(){const s=await api('status');$('#sst').textContent=s.ready?('✅ Chal raha hai: '+s.provider+' ('+s.model+')'):'⚠️ Abhi API key nahi hai. Neeche daalo.';
+ $('#ph').checked=!!s.host_open;$('#phl').textContent=s.phone?('Phone (same Wi-Fi) par ye link kholo: '+s.phone):'';md.classList.add('open')}
+$('#set').onclick=openSet;$('#cl').onclick=()=>md.classList.remove('open');
+$('#sv').onclick=async()=>{const b={provider:$('#pv').value,key:$('#ky').value,phone:$('#ph').checked};const d=await api('settings',b);$('#ky').value='';
+ if(d.ok){md.classList.remove('open');add('✅ Settings save ho gayi! Ab baat karo.','a')}else $('#sst').textContent='❌ '+(d.error||'Error')};
+(async()=>{try{const s=await api('status');if(s.ready===false)openSet()}catch(e){}})();
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+if(!SR){$('#mic').style.display='none'}else{
+  const rec=new SR();rec.lang='hi-IN';rec.interimResults=false;let on=false;
+  $('#mic').onclick=()=>{if(on)return rec.stop();speechSynthesis.cancel();try{rec.start()}catch(e){}};
+  rec.onstart=()=>{on=true;$('#mic').classList.add('on')};
+  rec.onend=()=>{on=false;$('#mic').classList.remove('on')};
+  rec.onresult=e=>send(e.results[0][0].transcript);
+  rec.onerror=e=>add('Mic error: '+e.error+' (phone par mic ke liye HTTPS chahiye — neeche README dekho; tab tak keyboard ka mic use karo)','a');
+}
+</script></body></html>
